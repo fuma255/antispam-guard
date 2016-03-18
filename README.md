@@ -23,4 +23,5 @@ The Plugin is not usable in this state of construction!
 This Plugin is inspired from the WordPress Antispam-Bee Plugin from
 - Author: <a href="https://sergejmueller.github.io/">Sergej Müller</a>
 - Maintainers: <a href="https://github.com/pluginkollektiv">pluginkollektiv</a>
+
 Most part of the Antispam Functions are from the Main Projekt transfered to Processwire.
