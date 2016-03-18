@@ -1,10 +1,16 @@
-# antispam-guard
-Say Goodbye to comment spam on your Processwire website. Antispam Guard blocks spam comments effectively and without captchas. It is free of charge, ad-free and compliant with European data privacy standards.
+# antispam-guard #
+* Tags:              comment, spam, antispam, comments, protection, prevention
+* Requires at least: 2.3
+* Tested up to:
+* License:           GPLv3
 
 # Do not use yet!!!
 The Plugin is not usable in this state of construction!
 
-# Feature/Settings Overview
+## Description ##
+Say Goodbye to comment spam on your Processwire website. Antispam Guard blocks spam comments effectively and without captchas. It is free of charge, ad-free and compliant with European data privacy standards.
+
+## Feature/Settings Overview ##
 - Trust approved commenters.
 - Trust commenters with a Gravatar.
 - Consider the comment time.
