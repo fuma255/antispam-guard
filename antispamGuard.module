@@ -1,0 +1,453 @@
+	############################
+	####  SPAMPVALIDATION  #####
+	############################
+
+	/**
+	* Überprüfung der POST-Werte
+	*
+	* @since   0.1
+	*
+	*/
+
+	/**
+	* Prüfung der eingehenden Anfragen auf Spam
+	*
+	* @since   0.1
+	*
+	* @param   array  $comment  Unbehandelter Kommentar
+	* @return  array  $comment  Behandelter Kommentar
+	*/
+
+	/**
+	* Bereitet die Ersetzung des KOmmentarfeldes vor
+	*
+	* @since   0.1
+	* @change  2.4
+	*/
+
+	/**
+	* ersetzt das Kommentarfeld
+	*
+	* @since   2.4
+	* @change  2.6.4
+	*
+	* @param   string  $data  HTML-Code der Webseite
+	* @return  string         Behandelter HTML-Code
+	*/
+
+	/**
+	* Prüfung den Kommentar
+	*
+	* @since   0.1
+	*
+	* @param   array  $comment  Daten des Kommentars
+	* @return  array            Array mit dem Verdachtsgrund [optional]
+	*/
+	private static function _verify_comment_request($comment){
+
+	  /* Kommentarwerte */
+	  // $ip = $comment->id;
+	  // $url = $comment->website;
+	  $body = $comment->text;
+	  $email = $comment->email;
+	  $author = $comment->cite;
+
+		/* Leere Werte ? */
+	  if ( empty($body) ) {
+	    return array(
+	      'reason' => 'empty'
+	    );
+	  }
+
+	  /* IP? */
+	  /*if ( empty($ip) ) {
+	    return array(
+	      'reason' => 'empty'
+	    );
+	  }*/
+
+	  /* Leere Werte ? */
+	  if ( $this->data['require_email_author'] && ( empty($email) OR empty($author) ) ) {
+	    return array(
+	      'reason' => 'empty'
+	    );
+	  }
+
+	  /* Optionen */
+
+	  /* Bereits kommentiert? */
+	  if ( isset $this->data['already_commented'] && ! empty($email) && self::_is_approved_email($email) ) {
+	    return;
+	  }
+
+	  /* Check for a Gravatar */
+	  if ( isset $this->data['gravatar_check'] && ! empty($email) && self::_has_valid_gravatar($email) ) {
+	      return;
+	  }
+
+	  /* Bot erkannt */
+	  /*if ( ! empty($_POST['ab_spam__hidden_field']) ) {
+	    return array(
+	      'reason' => 'css'
+	    );
+	  }*/
+
+	  /* Action time */
+	  if ( isset $this->data['time_check'] && self::_is_shortest_time() ) {
+	    return array(
+	      'reason' => 'time'
+	    );
+	  }
+
+	  /* BBCode Spam */
+	  if ( isset $this->data['bbcode_check'] && self::_is_bbcode_spam($body) ) {
+	    return array(
+	      'reason' => 'bbcode'
+	    );
+	  }
+	  /* Erweiterter Schutz */
+	  if ( isset $this->data['advanced_check'] && self::_is_fake_ip($ip) ) {
+	    return array(
+	      'reason' => 'server'
+	    );
+	  }
+	  /* Regexp für Spam */
+	  if ( isset $this->data['regexp_check'] && self::_is_regexp_spam(
+	    array(
+	      'ip'	 => $ip,
+	      'host'	 => parse_url($url, PHP_URL_HOST),
+	      'body'	 => $body,
+	      'email'	 => $email,
+	      'author' => $author
+	    )
+	  ) ) {
+	    return array(
+	      'reason' => 'regexp'
+	    );
+	  }
+	  /* IP im lokalen Spam */
+	  if ( isset $this->data['spam_ip'] && self::_is_db_spam($ip, $url, $email) ) {
+	    return array(
+	      'reason' => 'localdb'
+	    );
+	  }
+
+	  /* DNSBL Spam */
+	  if ( isset $this->data['dnsbl_check'] && self::_is_dnsbl_spam($ip) ) {
+	    return array(
+	      'reason' => 'dnsbl'
+	    );
+	  }
+	}
+
+
+	/**
+	* Check for a Gravatar image
+	*
+	* @since   0.1
+	*
+	* @param   string	$email  Input email
+	* @return  boolean       	Check status (true = Gravatar available)
+	*/
+
+	/**
+	* Check for comment action time
+	*
+	* @since   2.6.4
+	* @change  2.6.4
+	*
+	* @return  boolean    TRUE if the action time is less than 5 seconds
+	*/
+
+
+	/**
+	* Anwendung von Regexp, auch benutzerdefiniert
+	*
+	* @since   2.5.2
+	* @change  2.5.6
+	*
+	* @param   array	$comment  Array mit Kommentardaten
+	* @return  boolean       	  TRUE bei verdächtigem Kommentar
+	*/
+
+
+	/**
+	* Prüfung eines Kommentars auf seine Existenz im lokalen Spam
+	*
+	* @since   2.0.0
+	* @change  2.5.4
+	*
+	* @param   string	$ip     Kommentar-IP
+	* @param   string	$url    Kommentar-URL [optional]
+	* @param   string	$email  Kommentar-Email [optional]
+	* @return  boolean          TRUE bei verdächtigem Kommentar
+	*/
+	private static function _is_db_spam($ip, $url = '', $email = ''){
+	  /* Default */
+	  $filter = array('`ip` = %s');
+	  $params = array( stripslashes($ip) );
+	  /* URL abgleichen */
+	  if ( ! empty($url) ) {
+	    $filter[] = '`website` = %s';
+	    $params[] = stripslashes($url);
+	  }
+	  /* E-Mail abgleichen */
+	  if ( ! empty($email) ) {
+	    $filter[] = '`email` = %s';
+	    $params[] = stripslashes($email);
+	  }
+	  /* Query ausführen */
+	  $result = $this->db->query(
+	    vsprintf(
+	      sprintf("SELECT `comment_ID` FROM `$wpdb->comments` WHERE `comment_approved` = 'spam' AND (%s) LIMIT 1",
+					implode(' OR ', $filter)
+	      ),
+	      $params
+	    )
+	  );
+	  return !empty($result);
+	}
+
+	/**
+	* Prüfung auf DNSBL Spam
+	*
+	* @since   2.4.5
+	* @change  2.4.5
+	*
+	* @param   string   $ip  IP-Adresse
+	* @return  boolean       TRUE bei gemeldeter IP
+	*/
+	private static function _is_dnsbl_spam($ip){
+	  /* Start request */
+	  $response = file_get_contents( sprintf('http://www.stopforumspam.com/api?ip=%s&f=json', $ip) );
+
+	  /* Get JSON */
+	  $json = $response;
+	  /* Decode JSON */
+	  $result = json_decode($json);
+	  /* Empty data */
+	  if ( empty($result->success) ) {
+	    return false;
+	  }
+	  /* Return status */
+	  return (bool) $result->ip->appears;
+	}
+
+	/**
+	* Prüfung auf BBCode Spa* Prüfung auf DNSBL Spam
+	*
+	* @since   0.1
+	*
+	* @param   string   $ip  IP-Adresse
+	* @return  boolean       TRUE bei gemeldeter IP
+	*/
+	private static function _is_bbcode_spam($body){
+		return (bool) preg_match('/\[url[=\]].*\[\/url\]/is', $body);
+	}
+
+	/**
+	* Check if the E-Mail-Adresse approved.
+	* Prüfung auf eine bereits freigegebene E-Mail-Adresse
+	*
+	* @since   0.1
+	*
+	* @param   string   $email  E-Mail-Adresse
+	* @return  boolean          TRUE bei einem gefundenen Eintrag
+	*/
+	private static function _is_approved_email($email)
+	{
+		/* Search */
+		$result = $this->db->query(
+								sprintf(
+									"SELECT id FROM field_comments WHERE status = 1 AND email = %s LIMIT 1",
+									stripslashes($email)
+								)
+							);
+
+		/* Found? */
+		if ( $result ) {
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	* Check for a fake IP
+	*
+	* @since   0.1
+	*
+	* @param   string   $ip    Client IP
+	* @param   string   $host  Client Host [optional]
+	* @return  boolean         TRUE if fake IP
+	*/
+	private static function _is_fake_ip($client_ip, $client_host = false)
+	{
+		/* Remote Host */
+		$host_by_ip = gethostbyaddr($client_ip);
+
+		/* IPv6 */
+		if ( self::_is_ipv6($client_ip) ) {
+			return $client_ip != $host_by_ip;
+		}
+
+		/* IPv4 / Comment */
+		if ( empty($client_host) ) {
+			$ip_by_host = gethostbyname($host_by_ip);
+			if ( $ip_by_host === $host_by_ip ) {
+				return false;
+			}
+		/* IPv4 / Trackback */
+		} else {
+			if ( $host_by_ip === $client_ip ) {
+				return true;
+			}
+			$ip_by_host = gethostbyname($client_host);
+		}
+		if ( strpos( $client_ip, self::_cut_ip($ip_by_host) ) === false ) {
+			return true;
+		}
+		return false;
+	}
+
+
+	/**
+	 * Kürzung der IP-Adressen
+	 *
+	 * @since   0.1
+	 *
+	 * @param   string   $ip       Original IP
+	 * @param   boolean  $cut_end  Kürzen vom Ende?
+	 * @return  string             Gekürzte IP
+	 */
+	private static function _cut_ip($ip, $cut_end = true)
+	{
+		/* Trenner */
+		$separator = ( self::_is_ipv4($ip) ? '.' : ':' );
+		return str_replace(
+			( $cut_end ? strrchr( $ip, $separator) : strstr( $ip, $separator) ),
+			'',
+			$ip
+		);
+	}
+
+	/**
+	* Dreht die IP-Adresse
+	*
+	* @since   0.1
+	*
+	* @param   string   $ip  IP-Adresse
+	* @return  string        Gedrehte IP-Adresse
+	*/
+	private static function _reverse_ip($ip){
+		return implode('.', array_reverse(explode('.',$ip)));
+	}
+
+	/**
+	* Check for an IPv4 address
+	*
+	* @since   0.1
+	*
+	* @param   string   $ip  IP to validate
+	* @return  integer       TRUE if IPv4
+	*/
+	private static function _is_ipv4($ip)	{
+		if ( function_exists('filter_var') ) {
+			return filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) !== false;
+		} else {
+			return preg_match('/^\d{1,3}(\.\d{1,3}){3,3}$/', $ip);
+		}
+	}
+
+	/**
+	* Check for an IPv6 address
+	*
+	* @since   0.1
+	*
+	* @param   string   $ip  IP to validate
+	* @return  boolean       TRUE if IPv6
+	*/
+	private static function _is_ipv6($ip){
+		if ( function_exists('filter_var') ) {
+			return filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) !== false;
+		} else {
+			return ! self::_is_ipv4($ip);
+		}
+	}
+
+	############################
+	#####  SPAM-BEHANDLUNG  ####
+	############################
+
+	/**
+	* Ausführung des Lösch-/Markier-Vorgangs
+	*
+	* @since   0.1
+	* @change  2.6.0
+	*
+	* @param   array    $comment  Unbehandelte Kommentardaten
+	* @param   string   $reason   Verdachtsgrund
+	* @param   boolean  $is_ping  Ping (ja oder nein) [optional]
+	* @return  array    $comment  Behandelte Kommentardaten
+	*/
+
+
+	/**
+	* Logfile mit erkanntem Spam
+	*
+	* @since   2.5.7
+	* @change  2.6.1
+	*
+	* @param   array   $comment  Array mit Kommentardaten
+	* @return  mixed   			 FALSE im Fehlerfall
+	*/
+
+
+	/**
+	* Sendet den 403-Header und beendet die Verbindung
+	*
+	* @since   2.5.6
+	* @change  2.5.6
+	*/
+
+
+	/**
+	* Return real client IP
+	*
+	* @since   2.6.1
+	* @change  2.6.1
+	*
+	* @return  mixed  $ip  Client IP
+	*/
+
+
+	/**
+	* Add spam reason as comment data
+	*
+	* @since   2.6.0
+	* @change  2.6.0
+	*
+	* @param   integer  $comment_id  Comment ID
+	*/
+
+
+	/**
+	* Delete spam reason as comment data
+	*
+	* @since   2.6.0
+	* @change  2.6.0
+	*
+	* @param   integer  $comment_id  Comment ID
+	*/
+
+
+	/**
+	* Versand einer Benachrichtigung via E-Mail
+	*
+	* @since   0.1
+	* @change  2.5.7
+	*
+	* @hook    string  antispam_bee_notification_subject  Custom subject for notification mails
+	*
+	* @param   intval  $id  ID des Kommentars
+	* @return  intval  $id  ID des Kommentars
+	*/
