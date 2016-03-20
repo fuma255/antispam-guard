@@ -4,8 +4,7 @@
 * @since   0.1
 *
 */
-public static function precheck_incoming_request()
-{
+public static function precheck_incoming_request(){
   /* Skip if not a comment request */
   if ( is_feed() OR is_trackback() OR empty($_POST) OR self::_is_mobile() ) {
     return;
@@ -38,8 +37,7 @@ public static function precheck_incoming_request()
 * @param   array  $comment  Unbehandelter Kommentar
 * @return  array  $comment  Behandelter Kommentar
 */
-public static function handle_incoming_request($comment)
-{
+public static function handle_incoming_request($comment){
   /* Add client IP */
   $comment['comment_author_IP'] = self::get_client_ip();
   /* Hook client IP */

@@ -1,3 +1,4 @@
+	<?php
 	############################
 	####  SPAMPVALIDATION  #####
 	############################
@@ -8,6 +9,25 @@
 	* @since   0.1
 	*
 	*/
+	public static function precheck_incoming_request(){
+	  /* Skip if not a comment request */
+
+	  /* Request params */
+	  $request_uri = self::get_key($_SERVER, 'REQUEST_URI');
+	  $request_path = parse_url($request_uri, PHP_URL_PATH);
+	  /* Request check */
+
+	  /* Form fields */
+	  $hidden_field = self::get_key($_POST, 'comment');
+	  $plugin_field = self::get_key($_POST, self::$_secret);
+	  /* Hidden field check */
+	  if ( empty($hidden_field) && ! empty($plugin_field) ) {
+	    $_POST['comment'] = $plugin_field;
+	    unset( $_POST[self::$_secret] );
+	  } else {
+	    $_POST['ab_spam__hidden_field'] = 1;
+	  }
+	}
 
 	/**
 	* Prüfung der eingehenden Anfragen auf Spam
@@ -17,6 +37,48 @@
 	* @param   array  $comment  Unbehandelter Kommentar
 	* @return  array  $comment  Behandelter Kommentar
 	*/
+	public static function handle_incoming_request($comment){
+
+		/* Add client IP */
+	  $comment['ip'] = self::get_client_ip();
+
+	  /* Request params */
+	  $request_uri = self::get_key($_SERVER, 'REQUEST_URI');
+	  $request_path = parse_url($request_uri, PHP_URL_PATH);
+	  /* Empty path? */
+	  if ( empty($request_path) ) {
+	    return self::_handle_spam_request(
+	      $comment,
+	      'empty'
+	    );
+	  }
+
+		/* Is a comment */
+	  if ( strpos($request_path, 'wp-comments-post.php') !== false && ! empty($_POST) ) {
+	    /* Verify request */
+	    $status = self::_verify_comment_request($comment);
+	    /* Treat the request as spam */
+	    if ( ! empty($status['reason']) ) {
+	      return self::_handle_spam_request(
+	        $comment,
+	        $status['reason']
+	      );
+	    }
+	  /* Is a trackback */
+	  } else if ( in_array(self::get_key($comment, 'comment_type'), $ping['types']) && $ping['allowed'] ) {
+	    /* Verify request */
+	    $status = self::_verify_trackback_request($comment);
+	    /* Treat the request as spam */
+	    if ( ! empty($status['reason']) ) {
+	      return self::_handle_spam_request(
+	        $comment,
+	        $status['reason'],
+	        true
+	      );
+	    }
+	  }
+	  return $comment;
+	}
 
 	/**
 	* Bereitet die Ersetzung des KOmmentarfeldes vor
@@ -140,7 +202,6 @@
 	  }
 	}
 
-
 	/**
 	* Check for a Gravatar image
 	*
@@ -254,8 +315,7 @@
 	* @param   string   $email  E-Mail-Adresse
 	* @return  boolean          TRUE bei einem gefundenen Eintrag
 	*/
-	private static function _is_approved_email($email)
-	{
+	private static function _is_approved_email($email){
 		/* Search */
 		$result = $this->db->query(
 								sprintf(
@@ -280,8 +340,7 @@
 	* @param   string   $host  Client Host [optional]
 	* @return  boolean         TRUE if fake IP
 	*/
-	private static function _is_fake_ip($client_ip, $client_host = false)
-	{
+	private static function _is_fake_ip($client_ip, $client_host = false)	{
 		/* Remote Host */
 		$host_by_ip = gethostbyaddr($client_ip);
 
@@ -309,7 +368,6 @@
 		return false;
 	}
 
-
 	/**
 	 * Kürzung der IP-Adressen
 	 *
@@ -319,8 +377,7 @@
 	 * @param   boolean  $cut_end  Kürzen vom Ende?
 	 * @return  string             Gekürzte IP
 	 */
-	private static function _cut_ip($ip, $cut_end = true)
-	{
+	private static function _cut_ip($ip, $cut_end = true)	{
 		/* Trenner */
 		$separator = ( self::_is_ipv4($ip) ? '.' : ':' );
 		return str_replace(
@@ -413,11 +470,46 @@
 	/**
 	* Return real client IP
 	*
-	* @since   2.6.1
-	* @change  2.6.1
+	* @since   0.1
 	*
 	* @return  mixed  $ip  Client IP
 	*/
+	public static function get_client_ip(){
+		if ( isset($_SERVER['HTTP_CLIENT_IP']) ) {
+			$ip = $_SERVER['HTTP_CLIENT_IP'];
+		} else if ( isset($_SERVER['HTTP_X_FORWARDED_FOR']) ) {
+			$ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+		} else if ( isset($_SERVER['HTTP_X_FORWARDED']) ) {
+			$ip = $_SERVER['HTTP_X_FORWARDED'];
+		} else if ( isset($_SERVER['HTTP_FORWARDED_FOR']) ) {
+			$ip = $_SERVER['HTTP_FORWARDED_FOR'];
+		} else if ( isset($_SERVER['HTTP_FORWARDED']) ) {
+			$ip = $_SERVER['HTTP_FORWARDED'];
+		} else if ( isset($_SERVER['REMOTE_ADDR']) ) {
+			$ip = $_SERVER['REMOTE_ADDR'];
+		} else {
+			return '';
+		}
+
+		if ( strpos($ip, ',') !== false ) {
+			$ips = explode(',', $ip);
+			$ip = trim(@$ips[0]);
+		}
+
+		if ( function_exists('filter_var') ){
+			return filter_var(
+				$ip,
+				FILTER_VALIDATE_IP
+			);
+		}
+
+		return preg_replace(
+			'/[^0-9a-f:\., ]/si',
+			'',
+			$ip
+		);
+
+	}
 
 
 	/**
