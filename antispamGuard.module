@@ -1,4 +1,162 @@
 	<?php
+	/**
+ * ProcessWire FieldtypeComments > CommentFilter > CommentFilterAkismet
+ *
+ * Implementation of a CommentFilter class specific to the Akismet filtering service.
+ *
+ * ProcessWire 2.x
+ * Copyright (C) 2015 by Sebastian Preisner
+ * This file licensed under GPLv3.0
+ *
+ * https://processwire.com
+ *
+ *
+ */
+
+$dirname = dirname(__FILE__);
+require_once($dirname . "/CommentFilter.php");
+
+/**
+ * Uses the Akismet service to identify comment spam. Module plugin for the Comments Fieldtype.
+ *
+ */
+
+	class CommentFilterAntispamgurd extends CommentFilter implements Module, ConfigurableModule {
+
+	public static function getModuleInfo() {
+		return array(
+			'title' => __('Comment Filter: Antispam Guard', __FILE__),
+			'version' => 102,
+			'summary' => __('Uses a couple of filters to protect your comments from spam.', __FILE__),
+			'permanent' => false,
+			'singular' => false,
+			'autoload' => false,
+			'requires' => 'FieldtypeComments',
+			);
+	}
+
+	public function __construct() {
+		parent::__construct();
+		$this->set('appUserAgent', 'ProcessWire');
+		$this->set('charset', 'utf-8');
+	}
+
+	public function init(){
+
+	}
+
+	public function setComment(Comment $comment) {
+		$this->comment = $comment;
+		$this->set('pageUrl', $this->homeURL . $this->fuel('page')->url);
+		if(!$comment->ip) $comment->ip = $_SERVER['REMOTE_ADDR'];
+		if(!$comment->user_agent) $comment->user_agent = $_SERVER['HTTP_USER_AGENT'];
+	}
+
+	public function checkSpam() {
+		if($this->comment->status == Comment::statusSpam) return true;
+		$this->verifyKey();
+		$request = $this->buildRequest();
+		$response = $this->httpPost($request, $this->apiKey . ".rest.akismet.com", '/1.1/comment-check');
+		$isSpam = $response[1] == 'true';
+		$this->setIsSpam($isSpam);
+		//print_r($response);
+		return $isSpam;
+	}
+
+	public function submitSpam() {
+		$this->verifyKey();
+		$request = $this->buildRequest();
+		$this->httpPost($request, $this->apiKey . ".rest.akismet.com", '/1.1/submit-spam');
+		$this->message("Notified Akismet of spam that it didn't identify");
+	}
+
+	public function submitHam() {
+		$this->verifyKey();
+		$request = $this->buildRequest();
+		$this->httpPost($request, $this->apiKey . ".rest.akismet.com", '/1.1/submit-ham');
+		$this->message("Notified Akismet of a spam false positive (ham)");
+	}
+
+	static public function getModuleConfigInputfields(array $data) {
+
+		$inputfields = new InputfieldWrapper();
+
+		$name = "honeypot";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('Activate Honeypot');
+		$f->description = __('Add a hidden Field to your Commentform to protect from Spambot.');
+		$inputfields->add($f);
+
+		$name = "trustAuthorized";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('Trust approved commenters');
+		$f->description = __('Always approve previously approved users.');
+		$inputfields->add($f);
+
+		$name = "gravatar";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('Trust Gravatar');
+		$f->description = __('Automatically approve Comments from Authors with Gravatar. (Pleas note the Privacy hint)');
+		$inputfields->add($f);
+
+		$name = "bbCode";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('BBcode as Spam.');
+		$f->description = __('Review the comment contents for BBCode links.');
+		$inputfields->add($f);
+
+		$name = "validIP";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('Validate commenters IP');
+		$f->description = __('Validity check for used ip address.');
+		$inputfields->add($f);
+
+		$name = "regEx";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('Use regular expressions');
+		$f->description = __('Predefined and custom patterns by plugin hook (not now!).');
+		$inputfields->add($f);
+
+		$name = "localSpam";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('Look in the local spam database');
+		$f->description = __('Already marked as spam? Yes? No?.');
+		$inputfields->add($f);
+
+		$name = "publicSpam";
+		if(!isset($data[$name])) $data[$name] = '';
+		$f = Wire::getFuel('modules')->get('InputfieldCheckbox');
+		$f->attr('name', $name);
+		$f->attr('value', $data[$name]);
+		$f->label = __('Use public Spam database');
+		$f->description = __('Use the public Spam database from https://stopforumspam.com to check for knowen Spamer IP\'s.');
+		$inputfields->add($f);
+		
+		return $inputfields;
+
+	}
+
 	############################
 	####  SPAMPVALIDATION  #####
 	############################
