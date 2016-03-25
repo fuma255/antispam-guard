@@ -35,9 +35,26 @@ require_once($dirname . "/CommentFilter.php");
 			);
 	}
 
+	protected $status = array();
+
+	static protected $defaults = array(
+                'require_email_author' => '',
+                'honeypot' => '',
+                'already_commented' => 'checked',
+								'gravatar_check' => '',
+								'bbcode_check' => 'checked',
+								'advanced_check' => 'checked',
+								'regexp_check' => '',
+								'spam_ip_local' => '',
+								'dnspl_check' => '',
+								'approve_comment' => ''
+        );
+
+
 	public function __construct() {
 		parent::__construct();
 		$this->comment->ip = $this->get_client_ip();
+		$this->setArray(self::$defaults);
 	}
 
 	/**
@@ -48,7 +65,7 @@ require_once($dirname . "/CommentFilter.php");
 	* @param   array  $comment  Daten des Kommentars
 	* @return  array            Array mit dem Verdachtsgrund [optional]
 	*/
-	private static function _verify_comment_request($comment){
+	private function _verify_comment_request($comment){
 
 	  /* Kommentarwerte */
 	  $ip = $comment->ip;
@@ -64,22 +81,27 @@ require_once($dirname . "/CommentFilter.php");
 	  if ( empty($ip) ) return array('reason' => 'empty');
 
 	  /* Leere Werte ? */
-	  if ( $this->data['require_email_author'] && ( empty($email) OR empty($author) ) ) {
+	  if ( $this->require_email_author && ( empty($email) OR empty($author) ) ) {
 	    return array( 'reason' => 'empty' );
 	  }
 
 	  /* Optionen */
 
 	  /* Bereits kommentiert? */
-	  if ( $this->data['already_commented'] && ! empty($email) && self::_is_approved_email($email) ) {
-	    return;
+	  if ( $this->already_commented && ! empty($email) && self::_is_approved_email($email) ) {
+			return array( 'approve' => true );
+	  }
+
+		/* Bereits als Spam makiert? */
+	  if ( $this->already_commented && ! empty($email) && self::_is_spam_email($email) ) {
+			return array( 'reason' => 'email-spam' );
 	  }
 
 	  /* Check for a Gravatar */
-	  if ( isset $this->data['gravatar_check']
+	  if ( $this->gravatar_check
 				&& ! empty($email)
 				&& self::_has_valid_gravatar($email) ) {
-	      return;
+	      return array( 'approve' => true );
 	  }
 
 	  /* Bot erkannt
@@ -94,17 +116,17 @@ require_once($dirname . "/CommentFilter.php");
 	  } */
 
 	  /* BBCode Spam */
-	  if ( $this->data['bbcode_check'] && self::_is_bbcode_spam($body) ) {
+	  if ( $this->bbcode_check && self::_is_bbcode_spam($body) ) {
 	    return array( 'reason' => 'bbcode' );
 	  }
 
 	  /* Erweiterter Schutz */
-	  if ( $this->data['advanced_check'] && self::_is_fake_ip($ip) ) {
+	  if ( $this->advanced_check && self::_is_fake_ip($ip) ) {
 	    return array( 'reason' => 'server' );
 	  }
 
 	  /* Regexp für Spam */
-	  if ( $this->data['regexp_check'] && self::_is_regexp_spam(
+	  if ( $this->regexp_check && self::_is_regexp_spam(
 					    array(
 					      'ip'	 => $ip,
 					      //'host'	 => parse_url($url, PHP_URL_HOST),
@@ -116,14 +138,15 @@ require_once($dirname . "/CommentFilter.php");
 	  }
 
 	  /* IP im lokalen Spam */
-	  if ( $this->data['spam_ip_local'] && self::_is_db_spam($ip, $url, $email) ) {
+	  if ( $this->spam_ip_local && self::_is_db_spam($ip, $url, $email) ) {
 	    return array( 'reason' => 'localdb' );
 	  }
 
 	  /* DNSBL Spam */
-	  if ( $this->data['dnsbl_check'] && self::_is_dnsbl_spam($ip) ) {
+	  if ( $this->dnsbl_check && self::_is_dnsbl_spam($ip) ) {
 	    return array( 'reason' => 'dnsbl' );
 	  }
+		return array ( 'approve' => false );
 	}
 
 	/**
@@ -137,14 +160,31 @@ require_once($dirname . "/CommentFilter.php");
 	*/
 	private static function _is_approved_email($email){
 		/* Search */
-		$commentsField = $this->fields->find('type=FieldtypeComments');
+		$commentsField = wire('fields')->find('type=FieldtypeComments');
 
 		foreach($commentsField as $field){
 			$result = FieldtypeComments::findComments($field->name, "email=$email, status=1")->first();
 			/* Found? */
 			if ( !empty($result) )	return true;
 		}
+		return false;
+	}
 
+	/**
+	 * E-Mail maked as Spam?
+	 *
+	 * @param  [type]  $email [description]
+	 * @return boolean        [description]
+	 */
+	private static function _is_spam_email($email){
+		/* Search */
+		$commentsField = wire('fields')->find('type=FieldtypeComments');
+
+		foreach($commentsField as $field){
+			$result = FieldtypeComments::findComments($field->name, "email=$email, status='-2'")->first();
+			/* Found? */
+			if ( !empty($result) )	return true;
+		}
 		return false;
 	}
 
@@ -176,7 +216,7 @@ require_once($dirname . "/CommentFilter.php");
 	* @return  boolean       TRUE bei gemeldeter IP
 	*/
 	private static function _is_bbcode_spam($body){
-		return (bool) preg_match('/\[url[=\]].*\[\/url\]/is', $body);
+		return (bool) preg_match('/\[url[=\]].*\[\/url\]/', $body);
 	}
 
 	/**
@@ -386,11 +426,11 @@ require_once($dirname . "/CommentFilter.php");
 			$params[] = stripslashes($email);
 		}
 		/* Query ausführen */
-		$commentsField = $this->fields->find('type=FieldtypeComments');
+		$commentsField = wire('fields')->find('type=FieldtypeComments');
 
 		foreach($commentsField as $field){
 
-			$result = $this->db->query( vsprintf(
+			$result = wire('db')->query( vsprintf(
 									sprintf("SELECT `id` FROM `{$field->getTable()}` WHERE `status` = '-2' AND (%s) LIMIT 1",
 										implode(' OR ', $filter) ), $params ) );
 
@@ -468,9 +508,9 @@ require_once($dirname . "/CommentFilter.php");
 		$status = $this->_verify_comment_request($this->comment);
 
 		if( ! empty($status['reason']) ){
-			$this->log->save('antispamguard', "{$status['reason']}");
-			$this->comment->status = Comment::statusSpam;
-		} elseif ( $this->data['approve_comment'] ) {
+			$this->log->save('antispamguard', "Spam: {$status['reason']}");
+ 			$this->comment->status = Comment::statusSpam;
+		} elseif ( $this->approve_comment || $status['approved'] ) {
 			$this->comment->status = Comment::statusApproved;
 		} else {
 			$this->comment->status = Comment::statusPending;
@@ -593,3 +633,4 @@ require_once($dirname . "/CommentFilter.php");
 		return $inputfields;
 
 	}
+}
