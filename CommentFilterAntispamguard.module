@@ -493,11 +493,13 @@ require_once($dirname . "/CommentFilter.php");
 		$status = $this->_verify_comment_request($this->comment);
 
 		if( ! empty($status['reason']) ){
-			$this->log->save('antispamguard', "Spam: {$status['reason']}");
+			if($this->logging) $this->log->save('antispamguard', "Spam: {$status['reason']}");
  			$this->comment->status = Comment::statusSpam;
 		} elseif ( $this->approve_comment || $status['approved'] ) {
+      if($this->logging) $this->log->save('antispamguard', "Approve: {$status['reason']}");
 			$this->comment->status = Comment::statusApproved;
 		} else {
+      if($this->logging) $this->log->save('antispamguard', "Pending: {$status['reason']}");
 			$this->comment->status = Comment::statusPending;
 		}
 

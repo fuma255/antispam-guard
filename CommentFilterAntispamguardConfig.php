@@ -13,6 +13,7 @@ class CommentFilterAntispamguardConfig extends ModuleConfig {
                   'spam_ip_local' => '',
                   'dnspl_check' => '',
                   'approve_comment' => '',
+                  'logging' => 1,
           );
 
   }
@@ -89,6 +90,14 @@ class CommentFilterAntispamguardConfig extends ModuleConfig {
 		$f->attr('name', 'regexp_check');
 		$f->label = __('Use regular expressions');
 		$f->description = __('Predefined and custom patterns by plugin hook (not now!).');
+    $f->autocheck = true;
+    $f->columnWidth = 50;
+    $fieldsetAdvanced->add($f);
+
+    $f = $this->modules->get('InputfieldCheckbox');
+		$f->attr('name', 'logging');
+		$f->label = __('Log Module Action');
+		$f->description = __('This is for check if everything works.');
     $f->autocheck = true;
     $f->columnWidth = 50;
     $fieldsetAdvanced->add($f);
