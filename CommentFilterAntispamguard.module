@@ -29,8 +29,8 @@ require_once($dirname . "/CommentFilter.php");
 			'version' => 102,
 			'summary' => __('Uses a couple of filters to protect your comments from spam.', __FILE__),
 			'permanent' => false,
-			'singular' => false,
-			'autoload' => false,
+			'singular' => true,
+			'autoload' => true,
 			'requires' => 'FieldtypeComments',
 			);
 	}
@@ -41,6 +41,26 @@ require_once($dirname . "/CommentFilter.php");
 		parent::__construct();
 		$this->comment->ip = $this->get_client_ip();
 	}
+
+  public function init(){
+    $this->addHookAfter('FieldtypeComments::getConfigInputfields', $this, 'getConfigInputfields' );
+  }
+
+  public function getConfigInputfields(HookEvent $event){
+
+    $name = 'useAntispamguard';
+    $fi = $this->wire('modules')->get('InputfieldCheckbox');
+    $fi->attr('name', $name);
+    $fi->attr('value', 1);
+    $fi->attr('checked', $field->$name ? 'checked' : '');
+    $fi->label = $this->_('Use Antispam-Guard?');
+    $fi->description = $this->_('This Module will automatically identify most spam without connection to external services.');
+    $fi->columnWidth = 50;
+
+    $form = $event->return;
+    $field = $form->get('deleteSpamDays');
+    $form->insertAfter($fi, $field);
+  }
 
 	/**
 	* Prüfung den Kommentar
